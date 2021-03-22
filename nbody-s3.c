@@ -43,68 +43,49 @@
  * step, the number of bodies, the time delta of each step, a Matrix of the
  * positions of bodies, and the a Matrix of bodies.
  */
-void approx_nbody_step(size_t s, size_t n, size_t time_step, Matrix* positions, Body* bodies) {
-    size_t pos_row = s*positions->cols;
-    
-    // Create n x 3 matrix for storing forces
-    Matrix* forces = matrix_zeros(n, 3);
-    // Compute force on each body
-    size_t rowi = 0, forcei = 0;
-    size_t posi = pos_row;
-    for (size_t i = 0; i < n; i++, rowi++, posi += 3) {
+void approx_nbody_step(size_t s, size_t n, size_t time_step, Matrix *positions, Body *bodies)
+{
+    size_t pos_row = s * positions->cols;
+    size_t rowi = 1;
+    size_t posi = pos_row + 3;
+    for (size_t i = 1; i < n; i++, rowi++, posi += 3)
+    {
         double mi = bodies[rowi].mass;
         double xi = positions->data[posi];
         double yi = positions->data[posi + 1];
         double zi = positions->data[posi + 2];
 
-        // Only go up to (i - 1) because of Newton's 3rd Law
-        size_t forcej = 0, rowj = 0;
+        // Compute acceleration of current body
+        double ax = 0, ay = 0, az = 0;
         size_t posj = pos_row;
-        for (size_t j = 0; j < i - 1; j++, rowj++, posj += 3) {
-            double mj = bodies[rowj].mass;
-            double dx = positions->data[posj    ] - xi;
+        for (size_t j = 0; j < i; j++, posj += 3)
+        {
+            double mj = bodies[j].mass;
+            double dx = positions->data[posj] - xi;
             double dy = positions->data[posj + 1] - yi;
             double dz = positions->data[posj + 2] - zi;
             double r = calc_distance(dx, dy, dz);
             double Fij = calc_grav_force(mi, mj, r);
-            // Calculate element of force sum
-            double fx = Fij*dx/r;
-            double fy = Fij*dy/r;
-            double fz = Fij*dz/r;
-            forces->data[forcei    ] += fx;
-            forces->data[forcei + 1] += fy;
-            forces->data[forcei + 2] += fz;
-            // Equal and opposite force
-            forces->data[forcej    ] -= fx;
-            forces->data[forcej + 1] -= fy;
-            forces->data[forcej + 2] -= fz;
-
-            forcej += forces->cols;
+            // Calculate element of acceleration sum
+            ax += Fij * dx / r;
+            ay += Fij * dy / r;
+            az += Fij * dz / r;
         }
-        forcei += forces->cols;
-    }
-
-    // Compute  acceleration, velocity, and then position of each body
-    rowi = 0, forcei = 0;
-    posi = pos_row;
-    for (size_t i = 0; i < n; i++, rowi++, posi += 3) {
-        double mi = bodies[rowi].mass;
+        ax /= mi;
+        ay /= mi;
+        az /= mi;
 
         // Compute velocity of current body based on current acceleration
-        bodies[rowi].vx += forces->data[forcei    ]/mi * time_step;
-        bodies[rowi].vy += forces->data[forcei + 1]/mi * time_step;
-        bodies[rowi].vz += forces->data[forcei + 2]/mi * time_step;
+        bodies[rowi].vx += ax * time_step;
+        bodies[rowi].vy += ay * time_step;
+        bodies[rowi].vz += az * time_step;
 
         // Compute position of current body for time t+Δt by adding vx*Δt,
         // vy*Δt, and vz*Δt to its positions from time t (respectively)
-        double xi = positions->data[posi];
-        double yi = positions->data[posi + 1];
-        double zi = positions->data[posi + 2];
-        positions->data[posi + positions->cols    ] = xi + bodies[rowi].vx * time_step;
+        positions->data[posi + positions->cols] = xi + bodies[rowi].vx * time_step;
         positions->data[posi + positions->cols + 1] = yi + bodies[rowi].vy * time_step;
         positions->data[posi + positions->cols + 2] = zi + bodies[rowi].vz * time_step;
     }
-    matrix_free(forces);
 }
 
 int main(int argc, const char* argv[]) {
