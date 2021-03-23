@@ -42,48 +42,58 @@
  * step, the number of bodies, the time delta of each step, a Matrix of the
  * positions of bodies, and the a Matrix of bodies.
  */
-void approx_nbody_step(size_t s, size_t n, size_t time_step, Matrix *positions, Body *bodies)
+void approx_nbody_step(size_t num_steps, size_t n, size_t time_step, Matrix *positions, Body *bodies, size_t num_threads)
 {
-    size_t pos_row = s * positions->cols;
-    size_t rowi = 1;
-    size_t posi = pos_row + 3;
-    for (size_t i = 1; i < n; i++, rowi++, posi += 3)
+
+    
+    #pragma omp parallel for num_threads(num_threads) schedule(static, 16384)
+    for (size_t s = 0; s < num_steps; s++)
     {
-        double mi = bodies[rowi].mass;
-        double xi = positions->data[posi];
-        double yi = positions->data[posi + 1];
-        double zi = positions->data[posi + 2];
+        size_t pos_row = s * positions->cols;
+        size_t posi = pos_row + 3;
 
-        // Compute acceleration of current body
-        double ax = 0, ay = 0, az = 0;
-        size_t posj = pos_row;
-        for (size_t j = 0; j < i; j++, posj += 3)
+        for (size_t i = 1; i < n; i++)
         {
-            double mj = bodies[j].mass;
-            double dx = positions->data[posj] - xi;
-            double dy = positions->data[posj + 1] - yi;
-            double dz = positions->data[posj + 2] - zi;
-            double r = calc_distance(dx, dy, dz);
-            double Fij = calc_grav_force(mi, mj, r);
-            // Calculate element of acceleration sum
-            ax += Fij * dx / r;
-            ay += Fij * dy / r;
-            az += Fij * dz / r;
+            double mi = bodies[i].mass;
+            double xi = positions->data[posi];
+            double yi = positions->data[posi + 1];
+            double zi = positions->data[posi + 2];
+
+            // Compute acceleration of current body
+            double ax = 0, ay = 0, az = 0;
+            size_t posj = pos_row;
+            for (size_t j = 0; j < i; j++)
+            {
+                double mj = bodies[j].mass;
+                double dx = positions->data[posj] - xi;
+                double dy = positions->data[posj + 1] - yi;
+                double dz = positions->data[posj + 2] - zi;
+                double r = calc_distance(dx, dy, dz);
+                double Fij = calc_grav_force(mi, mj, r);
+                // Calculate element of acceleration sum
+                ax += Fij * dx / r;
+                ay += Fij * dy / r;
+                az += Fij * dz / r;
+
+                posj += 3;
+            }
+            ax /= mi;
+            ay /= mi;
+            az /= mi;
+
+            // Compute velocity of current body based on current acceleration
+            bodies[i].vx += ax * time_step;
+            bodies[i].vy += ay * time_step;
+            bodies[i].vz += az * time_step;
+
+            // Compute position of current body for time t+Δt by adding vx*Δt,
+            // vy*Δt, and vz*Δt to its positions from time t (respectively)
+            positions->data[posi + positions->cols] = xi + bodies[i].vx * time_step;
+            positions->data[posi + positions->cols + 1] = yi + bodies[i].vy * time_step;
+            positions->data[posi + positions->cols + 2] = zi + bodies[i].vz * time_step;
+
+            posi += 3;
         }
-        ax /= mi;
-        ay /= mi;
-        az /= mi;
-
-        // Compute velocity of current body based on current acceleration
-        bodies[rowi].vx += ax * time_step;
-        bodies[rowi].vy += ay * time_step;
-        bodies[rowi].vz += az * time_step;
-
-        // Compute position of current body for time t+Δt by adding vx*Δt,
-        // vy*Δt, and vz*Δt to its positions from time t (respectively)
-        positions->data[posi + positions->cols] = xi + bodies[rowi].vx * time_step;
-        positions->data[posi + positions->cols + 1] = yi + bodies[rowi].vy * time_step;
-        positions->data[posi + positions->cols + 2] = zi + bodies[rowi].vz * time_step;
     }
 }
 
@@ -107,6 +117,12 @@ int main(int argc, const char *argv[])
         fprintf(stderr, "outputs-per-body must be positive\n");
         return 1;
     }
+    size_t num_threads = argc == 7 ? atoi(argv[6]) : get_num_cores_affinity() / 2; // TODO: you may choose to adjust the default value
+    if (num_threads <= 0)
+    {
+        fprintf(stderr, "num-threads must be positive\n");
+        return 1;
+    }
     Matrix *input = matrix_from_npy_path(argv[4]);
     if (input == NULL)
     {
@@ -124,6 +140,10 @@ int main(int argc, const char *argv[])
         fprintf(stderr, "input.npy must have at least 1 row\n");
         return 1;
     }
+    if (num_threads > n)
+    {
+        num_threads = n;
+    }
     size_t num_steps = (size_t)(total_time / time_step + 0.5);
     if (num_steps < num_outputs)
     {
@@ -138,6 +158,7 @@ int main(int argc, const char *argv[])
     //   num_steps    number of time steps to simulate (more useful than total_time)
     //   num_outputs  number of times the position will be output for all bodies
     //   output_steps number of steps between each output of the position
+    //   num_threads  number of threads to use
     //   input        n-by-7 Matrix of input data
     //   n            number of bodies to simulate
 
@@ -151,10 +172,7 @@ int main(int argc, const char *argv[])
     Body *bodies = create_bodies_matrix(input, n);
 
     // Approximate n-body problem for each time step
-    for (size_t s = 0; s < num_steps; s++)
-    {
-        approx_nbody_step(s, n, time_step, positions, bodies);
-    }
+    approx_nbody_step(num_steps, n, time_step, positions, bodies, num_threads);
 
     // Save data into an output Matrix
     Matrix *output = create_output_matrix(num_outputs, output_steps, num_steps, positions);
