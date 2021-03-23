@@ -44,11 +44,12 @@
  * positions of bodies, and the a Matrix of bodies.
  */
 void approx_nbody(size_t num_steps, size_t n, size_t time_step, Matrix* positions, Body* bodies, size_t num_threads) {
-    #pragma omp parallel for num_threads(num_threads) schedule(dynamic, 32)
+    #pragma omp parallel num_threads(num_threads)
     for (size_t s = 0; s < num_steps; s++) {
         size_t pos_row = s*positions->cols;
-        size_t posi = pos_row;
-        for (size_t i = 0; i < n; i++, posi += 3) {
+        #pragma omp for schedule(dynamic, 32)
+        for (size_t i = 0; i < n; i++) {
+            size_t posi = pos_row + i*3;
             double mi = bodies[i].mass;
             double xi = positions->data[posi];
             double yi = positions->data[posi + 1];
@@ -81,6 +82,7 @@ void approx_nbody(size_t num_steps, size_t n, size_t time_step, Matrix* position
             positions->data[posi + positions->cols + 1] = yi + bodies[i].vy * time_step;
             positions->data[posi + positions->cols + 2] = zi + bodies[i].vz * time_step;
         }
+        #pragma omp barrier
     }
 }
 
