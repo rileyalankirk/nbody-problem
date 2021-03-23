@@ -43,48 +43,57 @@
  * step, the number of bodies, the time delta of each step, a Matrix of the
  * positions of bodies, and the a Matrix of bodies.
  */
-void approx_nbody_step(size_t s, size_t n, size_t time_step, Matrix *positions, Body *bodies)
+void approx_nbody_step(size_t num_steps, size_t n, size_t time_step, Matrix *positions, Body *bodies)
 {
-    size_t pos_row = s * positions->cols;
-    size_t rowi = 1;
-    size_t posi = pos_row + 3;
-    for (size_t i = 1; i < n; i++, rowi++, posi += 3)
-    {
-        double mi = bodies[rowi].mass;
-        double xi = positions->data[posi];
-        double yi = positions->data[posi + 1];
-        double zi = positions->data[posi + 2];
+    for (size_t s = 0; s < num_steps; s++) {
+        size_t pos_row = s * positions->cols;
+        size_t posi = pos_row;
+        // Create n x 3 matrix for storing forces
+        for (size_t i = 0; i < n; i++, posi += 3)
+        {   
+            double mi = bodies[i].mass;
+            double xi = positions->data[posi];
+            double yi = positions->data[posi + 1];
+            double zi = positions->data[posi + 2];
 
-        // Compute acceleration of current body
-        double ax = 0, ay = 0, az = 0;
-        size_t posj = pos_row;
-        for (size_t j = 0; j < i; j++, posj += 3)
-        {
-            double mj = bodies[j].mass;
-            double dx = positions->data[posj] - xi;
-            double dy = positions->data[posj + 1] - yi;
-            double dz = positions->data[posj + 2] - zi;
-            double r = calc_distance(dx, dy, dz);
-            double Fij = calc_grav_force(mi, mj, r);
-            // Calculate element of acceleration sum
-            ax += Fij * dx / r;
-            ay += Fij * dy / r;
-            az += Fij * dz / r;
+            // Compute acceleration of current body
+            size_t posj = pos_row;
+            // Only go up to (i - 1) because of Newton's 3rd Law
+            for (size_t j = 0; j < i; j++, posj += 3)
+            {
+                double mj = bodies[j].mass;
+                double dx = positions->data[posj] - xi;
+                double dy = positions->data[posj + 1] - yi;
+                double dz = positions->data[posj + 2] - zi;
+                double r = calc_distance(dx, dy, dz);
+                double Fij = calc_grav_force(mi, mj, r);
+                // Calculate element of acceleration sum
+                double fx = Fij * dx / r;
+                double fy = Fij * dy / r;
+                double fz = Fij * dz / r;
+
+                // Compute velocity of current body based on current acceleration
+                bodies[i].vx += (fx / mi) * time_step;
+                bodies[i].vy += (fy / mi) * time_step;
+                bodies[i].vz += (fz / mi) * time_step;
+                bodies[j].vx -= (fx / mj) * time_step;
+                bodies[j].vy -= (fy / mj) * time_step;
+                bodies[j].vz -= (fz / mj) * time_step;
+            }
         }
-        ax /= mi;
-        ay /= mi;
-        az /= mi;
 
-        // Compute velocity of current body based on current acceleration
-        bodies[rowi].vx += ax * time_step;
-        bodies[rowi].vy += ay * time_step;
-        bodies[rowi].vz += az * time_step;
-
-        // Compute position of current body for time t+Δt by adding vx*Δt,
-        // vy*Δt, and vz*Δt to its positions from time t (respectively)
-        positions->data[posi + positions->cols] = xi + bodies[rowi].vx * time_step;
-        positions->data[posi + positions->cols + 1] = yi + bodies[rowi].vy * time_step;
-        positions->data[posi + positions->cols + 2] = zi + bodies[rowi].vz * time_step;
+        posi = pos_row;
+        for (size_t i = 0; i < n; i++) {
+            // Compute position of current body for time t+Δt by adding vx*Δt,
+            // vy*Δt, and vz*Δt to its positions from time t (respectively)
+            double xi = positions->data[posi];
+            double yi = positions->data[posi + 1];
+            double zi = positions->data[posi + 2];
+            positions->data[posi + positions->cols] = xi + bodies[i].vx * time_step;
+            positions->data[posi + positions->cols + 1] = yi + bodies[i].vy * time_step;
+            positions->data[posi + positions->cols + 2] = zi + bodies[i].vz * time_step;
+            posi += 3;
+        }
     }
 }
 
@@ -124,9 +133,7 @@ int main(int argc, const char* argv[]) {
     Body* bodies = create_bodies_matrix(input, n);
     
     // Approximate n-body problem for each time step
-    for (size_t s = 0; s < num_steps; s++) {
-        approx_nbody_step(s, n, time_step, positions, bodies);
-    }
+    approx_nbody_step(num_steps, n, time_step, positions, bodies);
 
     // Save data into an output Matrix
     Matrix* output = create_output_matrix(num_outputs, output_steps, num_steps, positions);
