@@ -48,11 +48,11 @@ void approx_nbody(size_t num_steps, size_t n, size_t time_step, Matrix *position
     for (size_t s = 0; s < num_steps; s++)
     {
         size_t pos_row = s * positions->cols;
-        size_t posi = pos_row;
         // Create n x 3 matrix for storing forces
         #pragma omp for schedule(dynamic, 16)
         for (size_t i = 0; i < n; i++)
         {   
+            size_t posi = pos_row + 3*i;
             double mi = bodies[i].mass;
             double xi = positions->data[posi];
             double yi = positions->data[posi + 1];
@@ -85,7 +85,6 @@ void approx_nbody(size_t num_steps, size_t n, size_t time_step, Matrix *position
                     bodies[j].vz -= (fz / mj) * time_step;
                 }
             }
-            posi += 3;
         }
 
         #pragma omp for
@@ -93,9 +92,9 @@ void approx_nbody(size_t num_steps, size_t n, size_t time_step, Matrix *position
             size_t position = pos_row + 3*i;
             // Compute position of current body for time t+Δt by adding vx*Δt,
             // vy*Δt, and vz*Δt to its positions from time t (respectively)
-            double xi = positions->data[posi];
-            double yi = positions->data[posi + 1];
-            double zi = positions->data[posi + 2];
+            double xi = positions->data[position];
+            double yi = positions->data[position + 1];
+            double zi = positions->data[position + 2];
             positions->data[position + positions->cols    ] = xi + bodies[i].vx * time_step;
             positions->data[position + positions->cols + 1] = yi + bodies[i].vy * time_step;
             positions->data[position + positions->cols + 2] = zi + bodies[i].vz * time_step;
